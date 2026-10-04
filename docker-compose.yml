@@ -1,0 +1,24 @@
+﻿version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: social-pulse-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_NAME=Social Media Analytics Framework
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - HASH_SALT=social-pulse-secret-salt-2026
+      - K_ANONYMITY_THRESHOLD=20
+      - DATABASE_PATH=/data/social_pulse.db
+      - REPLAY_DATASET_PATH=backend/app/data/sample_dataset.jsonl
+    volumes:
+      - pulse_data:/data
+    restart: unless-stopped
+
+volumes:
+  pulse_data:
