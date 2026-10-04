@@ -1,11 +1,11 @@
-﻿"""Main FastAPI application entry point with lifespan management and static dashboard hosting."""
+"""Main FastAPI application entry point with lifespan management and static dashboard hosting."""
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from backend.app.config import settings
 from backend.app.api import api_router
@@ -13,6 +13,9 @@ from backend.app.queue.worker import ingestion_queue
 from backend.app.db.repository import PostRepository
 from backend.app.connectors import connector_manager, ReplayConnector
 from backend.app.nlp.sentiment_analyzer import sentiment_engine
+
+# Resolve paths relative to this file's location (works on both local + Vercel)
+BASE_DIR = Path(__file__).parent.parent.parent  # project root
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -58,15 +61,27 @@ app.add_middleware(
 # Include API endpoints
 app.include_router(api_router)
 
-# Mount frontend static directory
-frontend_public = Path("frontend/public")
+# Mount frontend static directory — resolve relative to project root
+frontend_public = BASE_DIR / "frontend" / "public"
+if not frontend_public.exists():
+    # Fallback: try CWD-relative (local dev)
+    frontend_public = Path("frontend/public")
+
 if frontend_public.exists():
     app.mount("/static", StaticFiles(directory=str(frontend_public)), name="static")
 
     @app.get("/", include_in_schema=False)
     async def serve_index():
-        return FileResponse(frontend_public / "index.html")
+        index_file = frontend_public / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+        return HTMLResponse("<h1>SocialPulse API is running. Visit <a href='/docs'>/docs</a></h1>")
+else:
+    @app.get("/", include_in_schema=False)
+    async def serve_index_fallback():
+        return HTMLResponse("<h1>SocialPulse API running. Visit <a href='/docs'>/docs</a></h1>")
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.app.main:app", host=settings.HOST, port=settings.PORT, reload=True)
+
