@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SocialPulse | AI-Driven Audience Intelligence Framework</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eef2ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .glass { background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    const API_BASE = "";
+
+    function App() {
+      const [activeTab, setActiveTab] = useState("overview");
+      const [kpiStats, setKpiStats] = useState(null);
+      const [risingTrends, setRisingTrends] = useState([]);
+      const [timelineData, setTimelineData] = useState([]);
+      const [demographics, setDemographics] = useState(null);
+      const [networkData, setNetworkData] = useState(null);
+      const [influencers, setInfluencers] = useState([]);
+      const [cascadeData, setCascadeData] = useState([]);
+      const [selectedTopic, setSelectedTopic] = useState("#AIRevolution");
+      const [forecastData, setForecastData] = useState(null);
+      const [posts, setPosts] = useState([]);
+      const [ingestStatus, setIngestStatus] = useState(null);
+      const [cascadeStep, setCascadeStep] = useState(0);
+      const [isPlayingCascade, setIsPlayingCascade] = useState(false);
+      const [loading, setLoading] = useState(true);
+
+      const refreshAll = async () => {
+        setLoading(true);
+        try {
+          const [statusRes, trendsRes, timelineRes, demoRes, netRes, infRes, postsRes] = await Promise.all([
+            fetch(`${API_BASE}/api/ingest/status`).then(r => r.json()),
+            fetch(`${API_BASE}/api/trends/rising`).then(r => r.json()),
+            fetch(`${API_BASE}/api/sentiment/timeline?bucket=hour`).then(r => r.json()),
+            fetch(`${API_BASE}/api/demographics/summary?k=20`).then(r => r.json()),
+            fetch(`${API_BASE}/api/network/graph`).then(r => r.json()),
+            fetch(`${API_BASE}/api/network/influencers?limit=10`).then(r => r.json()),
+            fetch(`${API_BASE}/api/posts?limit=30`).then(r => r.json())
+          ]);
+
+          setIngestStatus(statusRes);
+          setKpiStats(statusRes.database);
+          setRisingTrends(trendsRes || []);
+          setTimelineData(timelineRes || []);
+          setDemographics(demoRes);
+          setNetworkData(netRes);
+          setInfluencers(infRes || []);
+          setPosts(postsRes || []);
+        } catch (err) {
+          console.error("Fetch error:", err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      useEffect(() => { refreshAll(); }, []);
+
+      useEffect(() => {
+        if (!selectedTopic) return;
+        fetch(`${API_BASE}/api/trends/forecast?topic=${encodeURIComponent(selectedTopic)}&hours=48`)
+          .then(r => r.json()).then(data => setForecastData(data)).catch(console.error);
+
+        fetch(`${API_BASE}/api/network/cascade?topic=${encodeURIComponent(selectedTopic)}&steps=8`)
+          .then(r => r.json()).then(data => { setCascadeData(data || []); setCascadeStep(0); }).catch(console.error);
+      }, [selectedTopic]);
+
+      useEffect(() => {
+        let interval = null;
+        if (isPlayingCascade && cascadeData.length > 0) {
+          interval = setInterval(() => {
+            setCascadeStep(prev => {
+              if (prev >= cascadeData.length - 1) { setIsPlayingCascade(false); return prev; }
+              return prev + 1;
+            });
+          }, 1200);
+        }
+        return () => clearInterval(interval);
+      }, [isPlayingCascade, cascadeData]);
+
+      const handleReplay = async (resetDb = false) => {
+        setLoading(true);
+        try {
+          await fetch(`${API_BASE}/api/ingest/replay?limit=380&reset_db=${resetDb}`, { method: "POST" });
+          await refreshAll();
+        } catch (e) { console.error(e); }
+        finally { setLoading(false); }
+      };
+
+      const handleLoadKaggle = async (resetDb = true) => {
+        setLoading(true);
+        try {
+          await fetch(`${API_BASE}/api/ingest/kaggle?limit=500&reset_db=${resetDb}`, { method: "POST" });
+          await refreshAll();
+        } catch (e) { console.error(e); }
+        finally { setLoading(false); }
+      };
+
+      const handleUploadKaggleCsv = async (file, resetDb = false) => {
+        setLoading(true);
+        try {
+          const formData = new FormData();
+          formData.append("file", file);
+          await fetch(`${API_BASE}/api/ingest/kaggle/upload?reset_db=${resetDb}`, {
+            method: "POST",
+            body: formData
+          });
+          await refreshAll();
+        } catch (e) { console.error(e); }
+        finally { setLoading(false); }
+      };
+
+      return (
+        <div className="flex flex-col min-h-screen">
+          <header className="glass sticky top-0 z-50 px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                <i data-lucide="activity" className="w-6 h-6 text-white"></i>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent">SocialPulse</h1>
+                <p className="text-xs text-slate-400 font-medium">Audience Intelligence & Timeline Analysis Engine</p>
+              </div>
+            </div>
+
+            <nav className="flex space-x-1 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800 text-sm font-medium">
+              {[
+                { id: "overview", label: "Overview", icon: "layout-dashboard" },
+                { id: "scanner", label: "Handle Intelligence", icon: "user-check" },
+                { id: "sentiment", label: "Sentiment Explorer", icon: "smile" },
+                { id: "demographics", label: "Demographics", icon: "users" },
+                { id: "trends", label: "Trends & Forecasts", icon: "trending-up" },
+                { id: "network", label: "Network & Cascade", icon: "share-2" },
+                { id: "sources", label: "Data Sources", icon: "database" }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg transition-all ${
+                    activeTab === tab.id ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                  }`}
+                >
+                  <i data-lucide={tab.icon} className="w-4 h-4"></i>
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </nav>
+
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => handleLoadKaggle(true)}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-indigo-600/30 transition"
+              >
+                <i data-lucide="database" className="w-3.5 h-3.5 text-cyan-300"></i>
+                <span>Load Kaggle Dataset</span>
+              </button>
+              <button
+                onClick={() => handleReplay(false)}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center space-x-1.5 border border-slate-700 transition"
+              >
+                <i data-lucide="play" className="w-3.5 h-3.5 text-emerald-400"></i>
+                <span>Replay Stream</span>
+              </button>
+              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Active</span>
+              </div>
+            </div>
+          </header>
+
+          <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+            {activeTab === "overview" && (
+              <OverviewView kpiStats={kpiStats} risingTrends={risingTrends} timelineData={timelineData} onSelectTopic={(t) => { setSelectedTopic(t); setActiveTab("trends"); }} onOpenScanner={() => setActiveTab("scanner")} />
+            )}
+            {activeTab === "scanner" && (
+              <ScannerView />
+            )}
+            {activeTab === "sentiment" && (
+              <SentimentView timelineData={timelineData} posts={posts} selectedTopic={selectedTopic} onSelectTopic={setSelectedTopic} />
+            )}
+            {activeTab === "demographics" && (
+              <DemographicsView demographics={demographics} />
+            )}
+            {activeTab === "trends" && (
+              <TrendsView risingTrends={risingTrends} forecastData={forecastData} selectedTopic={selectedTopic} onSelectTopic={setSelectedTopic} />
+            )}
+            {activeTab === "network" && (
+              <NetworkView networkData={networkData} influencers={influencers} cascadeData={cascadeData} cascadeStep={cascadeStep} setCascadeStep={setCascadeStep} isPlayingCascade={isPlayingCascade} setIsPlayingCascade={setIsPlayingCascade} selectedTopic={selectedTopic} onSelectTopic={setSelectedTopic} />
+            )}
+            {activeTab === "sources" && (
+              <SourcesView ingestStatus={ingestStatus} onTriggerReplay={handleReplay} onLoadKaggle={handleLoadKaggle} onUploadKaggleCsv={handleUploadKaggleCsv} />
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    function OverviewView({ kpiStats, risingTrends, timelineData, onSelectTopic, onOpenScanner }) {
+      useEffect(() => {
+        if (!timelineData || timelineData.length === 0) return;
+        Plotly.newPlot("overview-chart", [
+          {
+            x: timelineData.map(d => d.timestamp),
+            y: timelineData.map(d => d.post_count),
+            name: "Post Volume",
+            type: "bar",
+            marker: { color: "rgba(99, 102, 241, 0.45)" },
+            yaxis: "y"
+          },
+          {
+            x: timelineData.map(d => d.timestamp),
+            y: timelineData.map(d => d.avg_polarity),
+            name: "Avg Polarity",
+            type: "scatter",
+            mode: "lines+markers",
+            line: { color: "#10b981", width: 2.5 },
+            yaxis: "y2"
+          }
+        ], {
+          paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+          font: { color: "#94a3b8", family: "Inter" },
+          margin: { t: 20, r: 40, l: 40, b: 35 },
+          showlegend: true,
+          legend: { orientation: "h", y: 1.15, x: 0.1 },
+          xaxis: { showgrid: false },
+          yaxis: { title: "Posts/Hour", showgrid: true, gridcolor: "#1e293b" },
+          yaxis2: { title: "Polarity", overlaying: "y", side: "right", range: [-1, 1], showgrid: false }
+        }, { responsive: true, displayModeBar: false });
+      }, [timelineData]);
+
+      return (
+        <div className="space-y-8">
+          {/* Integrated Hero Section with Scanner Action */}
+          <div className="relative overflow-hidden rounded-3xl border border-slate-800/80 bg-gradient-to-b from-slate-900/90 via-slate-950 to-slate-950 p-6 sm:p-10 shadow-2xl">
+            <div className="absolute top-0 right-1/4 -mt-12 w-96 h-96 bg-indigo-600/15 rounded-full blur-[100px] pointer-events-none" />
+            <div className="relative z-10 max-w-4xl mx-auto text-center space-y-5">
+              <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold shadow-inner">
+                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+                <span>Next-Generation Audience Intelligence</span>
+                <span className="text-slate-600">|</span>
+                <span className="text-emerald-400 flex items-center gap-1 font-mono">k ≥ 20 Anonymity Verified</span>
+              </div>
+              <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-tight">
+                Transform Raw Social Streams Into <br className="hidden sm:inline" />
+                <span className="bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">Real-Time Audience Truth</span>
+              </h1>
+              <p className="text-sm sm:text-base text-slate-400 max-w-2xl mx-auto leading-relaxed">
+                Analyze any social handle or multi-platform stream to extract follower sentiment, aggregate demographics, rising topics, and influence cascades.
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={onOpenScanner}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 transition flex items-center space-x-2"
+                >
+                  <i data-lucide="scan" className="w-4 h-4"></i>
+                  <span>Scan Account / Handle Intelligence</span>
+                </button>
+                <a href="#overview-chart" className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-800 transition flex items-center space-x-2">
+                  <span>Explore Live Timeline</span>
+                  <i data-lucide="arrow-down" className="w-4 h-4 text-slate-400"></i>
+                </a>
+              </div>
+              <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-400">
+                <div className="flex -space-x-2 overflow-hidden p-0.5">
+                  {[
+                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
+                    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80',
+                    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80',
+                    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80'
+                  ].map((img, idx) => (
+                    <img key={idx} src={img} alt="Avatar" className="inline-block h-7 w-7 rounded-full ring-2 ring-slate-950 object-cover" />
+                  ))}
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-amber-400">★★★★★</span>
+                  <span className="font-bold text-slate-200">5.0</span>
+                  <span>· Trusted by 12,000+ data science & policy teams</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-8 pt-6 border-t border-slate-800/80 flex flex-wrap items-center justify-center gap-8 sm:gap-12 opacity-70 text-slate-400 text-xs font-semibold">
+              <span className="hover:text-indigo-400 transition flex items-center gap-1.5"><i data-lucide="zap" className="w-4 h-4 text-indigo-400"></i> Brand 1 (DataCore)</span>
+              <span className="hover:text-indigo-400 transition flex items-center gap-1.5"><i data-lucide="cpu" className="w-4 h-4 text-purple-400"></i> Brand 2 (NeuralLabs)</span>
+              <span className="hover:text-indigo-400 transition flex items-center gap-1.5"><i data-lucide="globe" className="w-4 h-4 text-emerald-400"></i> Brand 3 (EcoScale)</span>
+              <span className="hover:text-indigo-400 transition flex items-center gap-1.5"><i data-lucide="layers" className="w-4 h-4 text-pink-400"></i> Brand 4 (PulseGrid)</span>
+              <span className="hover:text-indigo-400 transition flex items-center gap-1.5"><i data-lucide="shield" className="w-4 h-4 text-amber-400"></i> Brand 5 (CivicTrust)</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="glass p-5 rounded-2xl border border-slate-800 flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Analyzed Posts</p>
+                <h3 className="text-3xl font-extrabold text-white mt-1">{kpiStats ? kpiStats.total_posts : "--"}</h3>
+                <p className="text-xs text-indigo-400 mt-1">Multilingual & Hinglish</p>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+                <i data-lucide="message-square" className="w-6 h-6"></i>
+              </div>
+            </div>
+            <div className="glass p-5 rounded-2xl border border-slate-800 flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Anonymized Users</p>
+                <h3 className="text-3xl font-extrabold text-white mt-1">{kpiStats ? kpiStats.total_users : "--"}</h3>
+                <p className="text-xs text-emerald-400 mt-1">SHA-256 Salted Hashes</p>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                <i data-lucide="shield-check" className="w-6 h-6"></i>
+              </div>
+            </div>
+            <div className="glass p-5 rounded-2xl border border-slate-800 flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Peak Viral Topic</p>
+                <h3 className="text-2xl font-extrabold text-pink-400 mt-1 truncate max-w-[160px]">
+                  {risingTrends[0] ? risingTrends[0].name : "#AIRevolution"}
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">Velocity: {risingTrends[0] ? risingTrends[0].velocity : "--"} posts/hr</p>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-pink-500/10 flex items-center justify-center text-pink-400">
+                <i data-lucide="zap" className="w-6 h-6"></i>
+              </div>
+            </div>
+            <div className="glass p-5 rounded-2xl border border-slate-800 flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Privacy Status</p>
+                <h3 className="text-2xl font-extrabold text-emerald-400 mt-1">k ≥ 20 Safe</h3>
+                <p className="text-xs text-slate-400 mt-1">Zero PII in Logs / Responses</p>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                <i data-lucide="lock" className="w-6 h-6"></i>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 glass p-6 rounded-2xl border border-slate-800">
+              <h3 className="text-base font-bold text-white mb-1">Audience Timeline: Volume & Polarity</h3>
+              <p className="text-xs text-slate-400 mb-3">Hourly aggregation showing event bursts and emotional shifts</p>
+              <div id="overview-chart" className="w-full h-72"></div>
+            </div>
+            <div className="glass p-6 rounded-2xl border border-slate-800">
+              <h3 className="text-base font-bold text-white mb-1">Top Rising Topics</h3>
+              <p className="text-xs text-slate-400 mb-4">Ranked by Velocity × Acceleration × User Spread</p>
+              <div className="space-y-3">
+                {risingTrends.slice(0, 4).map(trend => (
+                  <div
+                    key={trend.topic_id}
+                    onClick={() => onSelectTopic(trend.name)}
+                    className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition flex items-center justify-between"
+                  >
+                    <div>
+                      <span className="font-bold text-sm text-white">{trend.name}</span>
+                      <p className="text-xs text-slate-400">{trend.total_volume} posts · {trend.unique_users} users</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-extrabold text-indigo-400">{trend.trend_score}</span>
+                      <p className="text-[10px] text-slate-500">Score</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // New Tab: Handle / Account Intelligence Scanner (4 Pillars + Feedback)
+    function ScannerView() {
+      const [platform, setPlatform] = useState("x");
+      const [handleInput, setHandleInput] = useState("@tech_lead_arjun");
+      const [analyzing, setAnalyzing] = useState(false);
+      const [profileData, setProfileData] = useState(null);
+
+      const runAnalysis = async (targetHandle) => {
+        const queryHandle = targetHandle || handleInput;
+        if (!queryHandle) return;
+        setAnalyzing(true);
+        try {
+          const res = await fetch(`${API_BASE}/api/analyze/profile?handle=${encodeURIComponent(queryHandle)}&platform=${platform}&sample_size=50`);
+          const data = await res.json();
+          setProfileData(data);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setAnalyzing(false);
+          setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 100);
+        }
+      };
+
+      useEffect(() => {
+        runAnalysis("@tech_lead_arjun");
+      }, []);
+
+      const presetHandles = [
+        { handle: "@tech_lead_arjun", label: "Tech Lead Arjun (AI)", platform: "x" },
+        { handle: "@crypto_analyst_raj", label: "Crypto Analyst Raj", platform: "x" },
+        { handle: "@ananya_climate_voice", label: "Ananya (Climate)", platform: "telegram" },
+        { handle: "@cynical_sid", label: "Cynical Sid (Satire)", platform: "reddit" },
+        { handle: "@elonmusk", label: "Elon Musk (Simulated)", platform: "x" }
+      ];
+
+      return (
+        <div className="space-y-6">
+          {/* Scanner Input Header */}
+          <div className="glass p-6 rounded-2xl border border-slate-800">
+            <div className="max-w-3xl mx-auto text-center space-y-3 mb-6">
+              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-semibold">
+                <i data-lucide="search" className="w-3.5 h-3.5"></i>
+                <span>4-Pillar Social Media ID Scanner</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
+                Analyze Any Social Media Handle
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-400">
+                Enter any username, creator handle or channel ID. SocialPulse extracts: (1) Sentiment, (2) Demographics, (3) Trends, (4) Network Spread, and delivers an Executive Feedback Report.
+              </p>
+            </div>
+
+            {/* Input Bar */}
+            <div className="max-w-2xl mx-auto flex flex-col sm:flex-row items-center gap-2 bg-slate-900/90 p-2 rounded-2xl border border-slate-800 shadow-xl">
+              <select
+                value={platform}
+                onChange={e => setPlatform(e.target.value)}
+                className="w-full sm:w-36 bg-slate-800 text-xs font-semibold text-slate-200 py-2.5 px-3 rounded-xl border border-slate-700"
+              >
+                <option value="x">X (Twitter)</option>
+                <option value="telegram">Telegram</option>
+                <option value="reddit">Reddit</option>
+                <option value="youtube">YouTube</option>
+                <option value="instagram">Instagram</option>
+              </select>
+
+              <input
+                type="text"
+                value={handleInput}
+                onChange={e => setHandleInput(e.target.value)}
+                placeholder="Enter handle, e.g. @tech_lead_arjun"
+                className="w-full bg-transparent px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none"
+              />
+
+              <button
+                onClick={() => runAnalysis()}
+                disabled={analyzing}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center justify-center space-x-2 shadow-lg shadow-indigo-600/30 whitespace-nowrap"
+              >
+                {analyzing ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    <span>Analyzing...</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <i data-lucide="sparkles" className="w-4 h-4"></i>
+                    <span>Analyze Account</span>
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Quick Preset Chips */}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+              <span className="text-slate-500 text-[11px]">Try presets:</span>
+              {presetHandles.map(preset => (
+                <button
+                  key={preset.handle}
+                  onClick={() => {
+                    setHandleInput(preset.handle);
+                    setPlatform(preset.platform);
+                    runAnalysis(preset.handle);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 transition"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Analysis Results Display */}
+          {profileData && (
+            <div className="space-y-6">
+              {/* Account Overview & Health Score Header */}
+              <div className="glass p-6 rounded-2xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                      {profileData.handle.slice(1, 3).toUpperCase()}
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-white flex items-center space-x-2">
+                        <span>{profileData.handle}</span>
+                        <span className="uppercase text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold">{profileData.platform}</span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mono">Salted Hash: {profileData.user_hash} · {profileData.analyzed_posts_count} posts analyzed</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Feedback Score Badge */}
+                <div className="flex items-center space-x-4 bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800">
+                  <div className="text-right">
+                    <p className="text-[10px] uppercase font-bold text-slate-400">Account Health Score</p>
+                    <p className="text-xs font-semibold text-emerald-400">{profileData.feedback.status_label}</p>
+                  </div>
+                  <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border-2 border-indigo-500/40 flex items-center justify-center text-2xl font-black text-indigo-400">
+                    {profileData.feedback.health_score}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4 Pillars Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Pillar 1: Sentiment */}
+                <div className="glass p-6 rounded-2xl border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="p-2 rounded-xl bg-pink-500/10 text-pink-400"><i data-lucide="heart" className="w-4 h-4"></i></div>
+                      <h4 className="text-sm font-bold text-white">What are people feeling? → Sentiment</h4>
+                    </div>
+                    <span className="text-xs font-bold text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded-full">
+                      {profileData.sentiment.overall_sentiment}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
+                    {profileData.sentiment.audience_feeling_summary}
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <p className="text-[10px] text-slate-400 uppercase">Polarity</p>
+                      <p className="text-sm font-bold text-indigo-400 mt-0.5">{profileData.sentiment.avg_polarity > 0 ? `+${profileData.sentiment.avg_polarity}` : profileData.sentiment.avg_polarity}</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <p className="text-[10px] text-slate-400 uppercase">Dominant</p>
+                      <p className="text-sm font-bold text-emerald-400 mt-0.5 capitalize">{profileData.sentiment.dominant_emotion}</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <p className="text-[10px] text-slate-400 uppercase">Sarcasm Rate</p>
+                      <p className="text-sm font-bold text-amber-400 mt-0.5">{profileData.sentiment.sarcasm_rate}%</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pillar 2: Demographics */}
+                <div className="glass p-6 rounded-2xl border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400"><i data-lucide="users" className="w-4 h-4"></i></div>
+                      <h4 className="text-sm font-bold text-white">Who are the people? → Demographics</h4>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <i data-lucide="shield" className="w-3 h-3"></i>
+                      <span>k ≥ 20 Verified</span>
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
+                    {profileData.demographics.who_they_are_summary}
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Top Geographies</p>
+                      <p className="text-xs font-bold text-slate-200 mt-1">{profileData.demographics.top_geographies[0]?.category || "Global"}</p>
+                      <p className="text-[11px] text-slate-500">{profileData.demographics.top_geographies[1]?.category}</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Audience Archetype</p>
+                      <p className="text-xs font-bold text-slate-200 mt-1 truncate">{profileData.demographics.audience_archetype}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pillar 3: Trends */}
+                <div className="glass p-6 rounded-2xl border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400"><i data-lucide="trending-up" className="w-4 h-4"></i></div>
+                      <h4 className="text-sm font-bold text-white">What are they talking about? → Trends</h4>
+                    </div>
+                    <span className="text-xs font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full">
+                      {profileData.trends.viral_velocity_score} posts/hr
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
+                    {profileData.trends.what_they_talk_about_summary}
+                  </p>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {profileData.trends.key_topics.map(t => (
+                      <span key={t} className="px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 font-semibold text-xs border border-indigo-500/20">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pillar 4: Network & Spread */}
+                <div className="glass p-6 rounded-2xl border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400"><i data-lucide="share-2" className="w-4 h-4"></i></div>
+                      <h4 className="text-sm font-bold text-white">How does info spread? → Network</h4>
+                    </div>
+                    <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                      {profileData.network.reach_tier}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
+                    {profileData.network.how_info_spreads_summary}
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Community Role</p>
+                      <p className="text-xs font-bold text-slate-200 mt-1">{profileData.network.community_role}</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Cascade Diffusion</p>
+                      <p className="text-[11px] font-semibold text-indigo-400 mt-1 truncate">{profileData.network.cascade_spread_rate}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Feedback & Recommendations Report Card */}
+              <div className="glass p-6 rounded-2xl border border-indigo-500/30 space-y-5 bg-gradient-to-b from-indigo-950/20 via-slate-950 to-slate-950">
+                <div className="flex items-center space-x-2">
+                  <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400"><i data-lucide="award" className="w-5 h-5"></i></div>
+                  <div>
+                    <h4 className="text-base font-bold text-white">Executive Feedback & Recommendations Report</h4>
+                    <p className="text-xs text-slate-400">Algorithmic diagnosis of audience friction, organic strengths, and strategic growth steps</p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-200 leading-relaxed">
+                  <span className="font-bold text-indigo-400">Executive Summary: </span>
+                  {profileData.feedback.executive_summary}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Strengths */}
+                  <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-2">
+                    <h5 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <i data-lucide="check-circle" className="w-4 h-4"></i>
+                      <span>Audience Strengths & Catalysts</span>
+                    </h5>
+                    <ul className="space-y-1.5 text-xs text-slate-300">
+                      {profileData.feedback.strengths.map((s, idx) => (
+                        <li key={idx} className="flex items-start space-x-2">
+                          <span className="text-emerald-400 font-bold">•</span>
+                          <span>{s}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Risk Flags */}
+                  <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-2">
+                    <h5 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <i data-lucide="alert-triangle" className="w-4 h-4"></i>
+                      <span>Risk Flags & Friction Points</span>
+                    </h5>
+                    <ul className="space-y-1.5 text-xs text-slate-300">
+                      {profileData.feedback.risk_flags.map((r, idx) => (
+                        <li key={idx} className="flex items-start space-x-2">
+                          <span className="text-amber-400 font-bold">•</span>
+                          <span>{r}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Actionable Recommendations */}
+                <div className="p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/20 space-y-2">
+                  <h5 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <i data-lucide="lightbulb" className="w-4 h-4"></i>
+                    <span>Actionable Strategic Recommendations</span>
+                  </h5>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-300">
+                    {profileData.feedback.actionable_recommendations.map((rec, idx) => (
+                      <div key={idx} className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80 flex items-start space-x-2">
+                        <span className="w-4 h-4 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">{idx+1}</span>
+                        <span>{rec}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function SentimentView({ timelineData, posts, selectedTopic, onSelectTopic }) {
+      const [filterEmotion, setFilterEmotion] = useState("all");
+
+      useEffect(() => {
+        if (!timelineData || timelineData.length === 0) return;
+        const xVals = timelineData.map(d => d.timestamp);
+        const emotions = ["joy", "excitement", "anger", "anxiety", "support", "opposition", "sadness"];
+        const colors = {
+          joy: "#10b981", excitement: "#3b82f6", anger: "#ef4444",
+          anxiety: "#f59e0b", support: "#8b5cf6", opposition: "#ec4899", sadness: "#64748b"
+        };
+        const traces = emotions.map(em => ({
+          x: xVals,
+          y: timelineData.map(d => (d.emotions && d.emotions[em]) ? d.emotions[em] : 0),
+          name: em.charAt(0).toUpperCase() + em.slice(1),
+          stackgroup: "one",
+          fillcolor: colors[em] + "88",
+          line: { color: colors[em], width: 1.5 }
+        }));
+        Plotly.newPlot("sentiment-area-chart", traces, {
+          paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+          font: { color: "#94a3b8", family: "Inter" },
+          margin: { t: 20, r: 20, l: 40, b: 35 },
+          legend: { orientation: "h", y: 1.15 },
+          xaxis: { showgrid: false },
+          yaxis: { title: "Emotion Count", showgrid: true, gridcolor: "#1e293b" }
+        }, { responsive: true, displayModeBar: false });
+      }, [timelineData]);
+
+      const filteredPosts = posts.filter(p => {
+        if (filterEmotion !== "all" && p.sentiment && p.sentiment.emotion !== filterEmotion) return false;
+        return true;
+      });
+
+      return (
+        <div className="space-y-6">
+          <div className="glass p-6 rounded-2xl border border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-white">Multi-Dimensional Emotion Stack (8-Class Classifier)</h3>
+                <p className="text-xs text-slate-400">Temporal distribution of follower emotional states with sarcasm inversion</p>
+              </div>
+              <select
+                value={filterEmotion}
+                onChange={e => setFilterEmotion(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-xs rounded-lg px-3 py-1.5 text-slate-200"
+              >
+                <option value="all">All Emotions</option>
+                <option value="joy">Joy</option>
+                <option value="excitement">Excitement</option>
+                <option value="anger">Anger</option>
+                <option value="anxiety">Anxiety</option>
+                <option value="support">Support</option>
+                <option value="opposition">Opposition</option>
+                <option value="sadness">Sadness</option>
+              </select>
+            </div>
+            <div id="sentiment-area-chart" className="w-full h-80"></div>
+          </div>
+
+          <div className="glass p-6 rounded-2xl border border-slate-800">
+            <h3 className="text-base font-bold text-white mb-1">Post Stream Drill-Down</h3>
+            <p className="text-xs text-slate-400 mb-4">Hinglish code-mixing, sarcasm flags, and topic stance</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-2">
+              {filteredPosts.map(p => (
+                <div key={p.post_id} className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="mono text-indigo-400 font-semibold">{p.user_hash.slice(0, 12)}...</span>
+                    <div className="flex items-center space-x-1.5">
+                      <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-bold">{p.platform}</span>
+                      <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold">{p.lang}</span>
+                      {p.sentiment && p.sentiment.sarcasm && (
+                        <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-400 font-bold">Sarcasm</span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-200 leading-snug">{p.text}</p>
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs text-slate-400">
+                    <span className="capitalize font-semibold text-slate-300">{p.sentiment ? p.sentiment.emotion : "neutral"} (Pol: {p.sentiment ? p.sentiment.polarity : 0})</span>
+                    <span>♥ {p.engagement ? p.engagement.likes : 0} · 🔄 {p.engagement ? p.engagement.retweets : 0}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function DemographicsView({ demographics }) {
+      useEffect(() => {
+        if (!demographics) return;
+        Plotly.newPlot("demo-age-chart", [{
+          x: demographics.age_groups.map(d => d.category),
+          y: demographics.age_groups.map(d => d.count),
+          type: "bar", marker: { color: "#6366f1" }
+        }], {
+          paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+          font: { color: "#94a3b8", family: "Inter" },
+          margin: { t: 10, r: 10, l: 30, b: 35 },
+          xaxis: { showgrid: false }, yaxis: { showgrid: true, gridcolor: "#1e293b" }
+        }, { responsive: true, displayModeBar: false });
+
+        Plotly.newPlot("demo-geo-chart", [{
+          x: demographics.geography.map(d => d.category),
+          y: demographics.geography.map(d => d.count),
+          type: "bar", marker: { color: "#10b981" }
+        }], {
+          paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+          font: { color: "#94a3b8", family: "Inter" },
+          margin: { t: 10, r: 10, l: 30, b: 35 },
+          xaxis: { showgrid: false }, yaxis: { showgrid: true, gridcolor: "#1e293b" }
+        }, { responsive: true, displayModeBar: false });
+      }, [demographics]);
+
+      if (!demographics) return <div className="text-center py-12 text-slate-400">Loading demographics...</div>;
+
+      return (
+        <div className="space-y-6">
+          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-start space-x-3">
+            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 mt-0.5">
+              <i data-lucide="shield" className="w-5 h-5"></i>
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-emerald-300">Privacy-First Audience Profiling (k-Anonymity Verified)</h4>
+              <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                {demographics.privacy_guarantee}. Individual user-level inferences are strictly prohibited from exposure.
+                Sub-threshold groups with fewer than {demographics.k_threshold} individuals are automatically aggregated.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="glass p-6 rounded-2xl border border-slate-800">
+              <h3 className="text-sm font-bold text-white mb-1">Age Bracket Distribution</h3>
+              <p className="text-xs text-slate-400 mb-3">Inferred via public indicators & professional tenure</p>
+              <div id="demo-age-chart" className="w-full h-60"></div>
+            </div>
+            <div className="glass p-6 rounded-2xl border border-slate-800">
+              <h3 className="text-sm font-bold text-white mb-1">Geographic Distribution (Country/State)</h3>
+              <p className="text-xs text-slate-400 mb-3">State-level aggregation with circadian timezone correlation</p>
+              <div id="demo-geo-chart" className="w-full h-60"></div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="glass p-6 rounded-2xl border border-slate-800">
+              <h3 className="text-sm font-bold text-white mb-3">Professional Interest Clusters</h3>
+              <div className="space-y-3">
+                {demographics.professional_interests.map(item => (
+                  <div key={item.category} className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="font-semibold text-slate-200">{item.category}</span>
+                      <span className="text-slate-400">{item.count} users ({item.percentage}%)</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${item.percentage}%` }}></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="glass p-6 rounded-2xl border border-slate-800 flex flex-col justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white mb-2">Ethics, Guardrails & Limitations</h3>
+                <ul className="space-y-2 text-xs text-slate-400">
+                  {demographics.limitations.map((lim, idx) => (
+                    <li key={idx} className="flex items-start space-x-2">
+                      <span className="text-indigo-400 font-bold">•</span>
+                      <span>{lim}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-500">
+                Confidence Score: {Math.round(demographics.confidence_overall * 100)}% overall certainty
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function TrendsView({ risingTrends, forecastData, selectedTopic, onSelectTopic }) {
+      useEffect(() => {
+        if (!forecastData || !forecastData.forecast) return;
+        const histX = forecastData.history.map(h => h.timestamp);
+        const histY = forecastData.history.map(h => h.volume);
+        const fcstX = forecastData.forecast.map(f => f.timestamp);
+        const fcstY = forecastData.forecast.map(f => f.predicted_volume);
+        const ub95 = forecastData.forecast.map(f => f.upper_bound_95);
+        const lb95 = forecastData.forecast.map(f => f.lower_bound_95);
+        const ub80 = forecastData.forecast.map(f => f.upper_bound_80);
+        const lb80 = forecastData.forecast.map(f => f.lower_bound_80);
+
+        Plotly.newPlot("forecast-chart", [
+          {
+            x: fcstX.concat([...fcstX].reverse()),
+            y: ub95.concat([...lb95].reverse()),
+            fill: "toself", fillcolor: "rgba(99, 102, 241, 0.12)",
+            line: { color: "transparent" }, name: "95% Prediction Interval", type: "scatter"
+          },
+          {
+            x: fcstX.concat([...fcstX].reverse()),
+            y: ub80.concat([...lb80].reverse()),
+            fill: "toself", fillcolor: "rgba(99, 102, 241, 0.25)",
+            line: { color: "transparent" }, name: "80% Prediction Interval", type: "scatter"
+          },
+          {
+            x: histX, y: histY, mode: "lines", line: { color: "#94a3b8", width: 2 },
+            name: "Observed History", type: "scatter"
+          },
+          {
+            x: fcstX, y: fcstY, mode: "lines+markers", line: { color: "#6366f1", width: 2.5, dash: "dash" },
+            marker: { size: 4 }, name: "Holt-Winters Forecast", type: "scatter"
+          }
+        ], {
+          paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+          font: { color: "#94a3b8", family: "Inter" },
+          margin: { t: 20, r: 20, l: 40, b: 35 },
+          legend: { orientation: "h", y: 1.15 },
+          xaxis: { showgrid: false },
+          yaxis: { title: "Hourly Post Volume", showgrid: true, gridcolor: "#1e293b" }
+        }, { responsive: true, displayModeBar: false });
+      }, [forecastData]);
+
+      return (
+        <div className="space-y-6">
+          <div className="glass p-6 rounded-2xl border border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-white">Topic Volume Forecast (24–72 Hours)</h3>
+                <p className="text-xs text-slate-400">Holt-Winters exponential smoothing with dual 80% and 95% uncertainty cones</p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-slate-400">Topic:</span>
+                <select
+                  value={selectedTopic}
+                  onChange={e => onSelectTopic(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 text-xs rounded-lg px-3 py-1.5 text-white font-semibold"
+                >
+                  {risingTrends.map(t => (
+                    <option key={t.topic_id} value={t.name}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div id="forecast-chart" className="w-full h-80"></div>
+          </div>
+
+          <div className="glass p-6 rounded-2xl border border-slate-800">
+            <h3 className="text-base font-bold text-white mb-1">Ranked Trend Velocity & Burst Detection</h3>
+            <p className="text-xs text-slate-400 mb-4">Formula: TrendScore = Velocity × Acceleration × UniqueUserSpread</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-900/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">Topic</th>
+                    <th className="py-3 px-4">Volume</th>
+                    <th className="py-3 px-4">Velocity</th>
+                    <th className="py-3 px-4">Acceleration</th>
+                    <th className="py-3 px-4">Unique Users</th>
+                    <th className="py-3 px-4">Score</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {risingTrends.map(t => (
+                    <tr key={t.topic_id} className="hover:bg-slate-900/50 transition">
+                      <td className="py-3 px-4 font-bold text-white">{t.name}</td>
+                      <td className="py-3 px-4">{t.total_volume}</td>
+                      <td className="py-3 px-4 text-indigo-400 font-semibold">{t.velocity}</td>
+                      <td className="py-3 px-4 text-emerald-400">+{t.acceleration}</td>
+                      <td className="py-3 px-4">{t.unique_users}</td>
+                      <td className="py-3 px-4 font-extrabold text-white">{t.trend_score}</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          t.status === "rising" ? "bg-emerald-500/20 text-emerald-400" :
+                          t.status === "peaked" ? "bg-pink-500/20 text-pink-400" : "bg-slate-800 text-slate-400"
+                        }`}>{t.status}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <button
+                          onClick={() => onSelectTopic(t.name)}
+                          className="px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white transition"
+                        >Forecast</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function NetworkView({ networkData, influencers, cascadeData, cascadeStep, setCascadeStep, isPlayingCascade, setIsPlayingCascade, selectedTopic, onSelectTopic }) {
+      const canvasRef = useRef(null);
+
+      useEffect(() => {
+        if (!networkData || !canvasRef.current) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d");
+        const width = canvas.width = canvas.parentElement.clientWidth;
+        const height = canvas.height = 420;
+
+        const nodes = networkData.nodes;
+        const links = networkData.links;
+        if (!nodes || nodes.length === 0) return;
+
+        const nodeMap = {};
+        const angleStep = (2 * Math.PI) / nodes.length;
+        const commColors = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6"];
+        const currentCascade = cascadeData[cascadeStep];
+        const activeNodeSet = currentCascade ? new Set(currentCascade.active_nodes) : new Set(nodes.map(n => n.id));
+
+        nodes.forEach((n, i) => {
+          const r = 140 + (n.community_id * 18);
+          const theta = i * angleStep;
+          nodeMap[n.id] = {
+            ...n,
+            x: width / 2 + r * Math.cos(theta) + (Math.sin(i * 3) * 25),
+            y: height / 2 + r * Math.sin(theta) + (Math.cos(i * 3) * 25),
+            radius: Math.max(4, Math.min(14, n.pagerank * 400)),
+            isActive: activeNodeSet.has(n.id)
+          };
+        });
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.lineWidth = 0.8;
+        links.forEach(link => {
+          const src = nodeMap[link.source];
+          const tgt = nodeMap[link.target];
+          if (src && tgt) {
+            ctx.beginPath();
+            ctx.moveTo(src.x, src.y);
+            ctx.lineTo(tgt.x, tgt.y);
+            const bothActive = src.isActive && tgt.isActive;
+            ctx.strokeStyle = bothActive ? "rgba(99, 102, 241, 0.4)" : "rgba(51, 65, 85, 0.15)";
+            ctx.stroke();
+          }
+        });
+
+        Object.values(nodeMap).forEach(n => {
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.radius, 0, 2 * Math.PI);
+          const baseColor = commColors[n.community_id % commColors.length];
+          ctx.fillStyle = n.isActive ? baseColor : "#334155";
+          ctx.fill();
+
+          if (n.is_bridge) {
+            ctx.lineWidth = 2.5; ctx.strokeStyle = "#f59e0b"; ctx.stroke();
+          } else {
+            ctx.lineWidth = 1; ctx.strokeStyle = "#0f172a"; ctx.stroke();
+          }
+        });
+      }, [networkData, cascadeData, cascadeStep]);
+
+      return (
+        <div className="space-y-6">
+          <div className="glass p-6 rounded-2xl border border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-white">Community Topology & Bridge Linkages</h3>
+                <p className="text-xs text-slate-400">Louvain community partition · Amber rings = Bridge nodes · Node size = PageRank</p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-slate-400">Topic:</span>
+                <span className="text-xs font-bold text-indigo-400 bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20">{selectedTopic}</span>
+              </div>
+            </div>
+
+            <div className="w-full bg-slate-950/80 rounded-xl border border-slate-800 overflow-hidden relative">
+              <canvas ref={canvasRef} className="w-full"></canvas>
+              <div className="absolute bottom-3 left-3 bg-slate-900/90 border border-slate-800 p-2.5 rounded-lg text-[10px] space-y-1">
+                <div className="flex items-center space-x-2"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span><span className="text-slate-300">Community 0 (Tech)</span></div>
+                <div className="flex items-center space-x-2"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span><span className="text-slate-300">Community 1 (Climate)</span></div>
+                <div className="flex items-center space-x-2"><span className="w-2.5 h-2.5 rounded-full border-2 border-amber-400"></span><span className="text-slate-300">Bridge Node</span></div>
+              </div>
+            </div>
+
+            {cascadeData && cascadeData.length > 0 && (
+              <div className="mt-5 p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={() => setIsPlayingCascade(!isPlayingCascade)}
+                      className="w-8 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center transition"
+                    >
+                      <i data-lucide={isPlayingCascade ? "pause" : "play"} className="w-4 h-4"></i>
+                    </button>
+                    <div>
+                      <h4 className="text-xs font-bold text-white">Information Cascade Simulator</h4>
+                      <p className="text-[11px] text-slate-400">
+                        Step {cascadeStep + 1} of {cascadeData.length} · Reach: {cascadeData[cascadeStep] ? cascadeData[cascadeStep].cumulative_reach : 0} impressions
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold text-indigo-400 uppercase">
+                    Dominant: {cascadeData[cascadeStep] ? cascadeData[cascadeStep].dominant_sentiment : "neutral"}
+                  </span>
+                </div>
+                <input
+                  type="range" min="0" max={cascadeData.length - 1} value={cascadeStep}
+                  onChange={e => setCascadeStep(parseInt(e.target.value))}
+                  className="w-full accent-indigo-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="glass p-6 rounded-2xl border border-slate-800">
+            <h3 className="text-base font-bold text-white mb-1">Key Opinion Leaders (KOL Leaderboard)</h3>
+            <p className="text-xs text-slate-400 mb-4">Ranked by KOL Score (PageRank × Centrality × Reach)</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-900/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">User Hash</th>
+                    <th className="py-3 px-4">KOL Score</th>
+                    <th className="py-3 px-4">PageRank</th>
+                    <th className="py-3 px-4">Betweenness</th>
+                    <th className="py-3 px-4">Community</th>
+                    <th className="py-3 px-4">Inferred Profile</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {influencers.map(inf => (
+                    <tr key={inf.user_hash} className="hover:bg-slate-900/50 transition">
+                      <td className="py-3 px-4 font-mono font-bold text-indigo-300">{inf.user_hash}</td>
+                      <td className="py-3 px-4 font-extrabold text-white">{inf.kol_score}</td>
+                      <td className="py-3 px-4">{inf.pagerank}</td>
+                      <td className="py-3 px-4">{inf.betweenness}</td>
+                      <td className="py-3 px-4">Cluster #{inf.community_id}</td>
+                      <td className="py-3 px-4 text-slate-400 truncate max-w-xs">{inf.inferred_profile}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function SourcesView({ ingestStatus, onTriggerReplay, onLoadKaggle, onUploadKaggleCsv }) {
+      const fileInputRef = useRef(null);
+      if (!ingestStatus) return <div className="text-center py-12 text-slate-400">Loading connectors...</div>;
+
+      const handleFileChange = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (file) {
+          onUploadKaggleCsv(file, false);
+        }
+      };
+
+      return (
+        <div className="space-y-6">
+          {/* Kaggle Social Benchmark Dataset Featured Card */}
+          <div className="p-6 rounded-2xl bg-gradient-to-r from-cyan-950/60 via-slate-900 to-indigo-950/60 border border-cyan-500/30 shadow-xl shadow-cyan-950/20">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2.5">
+                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold uppercase tracking-wider">
+                    Kaggle Benchmark Dataset
+                  </span>
+                  <span className="text-xs text-slate-400">kaggle_social_dataset.csv · 500 Curated Posts</span>
+                </div>
+                <h3 className="text-lg font-bold text-white">Real-World Social Intelligence Benchmark</h3>
+                <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                  Ingests 500 multi-platform social posts across 4 domains (<span className="text-indigo-300 font-mono">#AIRevolution</span>, <span className="text-emerald-300 font-mono">#CryptoRally</span>, <span className="text-amber-300 font-mono">#SustainableTech</span>, <span className="text-rose-300 font-mono">#BrandCrisis</span>) with code-mixed Hinglish, user interaction cascades, and strict <span className="text-cyan-300 font-semibold">k &ge; 20 anonymity</span>.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">50 Real Users</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">X / Reddit / YT / Telegram</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">En + Hinglish Lexicon</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">Salted SHA-256</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept=".csv"
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center justify-center space-x-1.5"
+                >
+                  <i data-lucide="upload" className="w-3.5 h-3.5 text-cyan-400"></i>
+                  <span>Upload Custom CSV</span>
+                </button>
+                <button
+                  onClick={() => onLoadKaggle(true)}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/30 transition flex items-center justify-center space-x-1.5"
+                >
+                  <i data-lucide="download-cloud" className="w-4 h-4 text-cyan-200"></i>
+                  <span>Load Kaggle Dataset (500)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass p-6 rounded-2xl border border-slate-800 flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-white">Live Ingestion Telemetry & Pipeline Health</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Worker Throughput: <span className="font-semibold text-emerald-400">{ingestStatus.worker_queue.throughput_posts_per_sec} posts/sec</span> · Queue Depth: {ingestStatus.worker_queue.queue_size}
+              </p>
+            </div>
+            <button
+              onClick={() => onTriggerReplay(true)}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition flex items-center space-x-1.5"
+            >
+              <i data-lucide="rotate-ccw" className="w-3.5 h-3.5 text-pink-400"></i>
+              <span>Reset & Replay Demo Stream</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {ingestStatus.connectors.map(c => (
+              <div key={c.connector_name} className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-white capitalize">{c.platform.replace('_', ' ')}</h4>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                    c.is_active || c.platform === "replay_multi" || c.platform === "kaggle_benchmark" ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-800 text-slate-400"
+                  }`}>
+                    {c.is_active || c.platform === "replay_multi" || c.platform === "kaggle_benchmark" ? "Ready" : "Stub"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs text-slate-400">
+                  <div className="flex justify-between">
+                    <span>Ingested Posts:</span>
+                    <span className="font-bold text-white">{c.total_ingested}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Errors:</span>
+                    <span className="text-slate-500">{c.error_count}</span>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-500 truncate">
+                  Name: {c.connector_name}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+
+    setTimeout(() => {
+      if (window.lucide) window.lucide.createIcons();
+    }, 500);
+  </script>
+</body>
+</html>

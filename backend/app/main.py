@@ -61,27 +61,37 @@ app.add_middleware(
 # Include API endpoints
 app.include_router(api_router)
 
-# Mount frontend static directory — resolve relative to project root
-frontend_public = BASE_DIR / "frontend" / "public"
-if not frontend_public.exists():
-    # Fallback: try CWD-relative (local dev)
-    frontend_public = Path("frontend/public")
+def get_dashboard_html() -> str:
+    """Bulletproof loader for dashboard HTML across local dev and Vercel serverless."""
+    candidates = [
+        Path(__file__).parent / "index.html",
+        BASE_DIR / "frontend" / "public" / "index.html",
+        BASE_DIR / "api" / "index.html",
+        BASE_DIR / "backend" / "app" / "index.html",
+        Path("frontend/public/index.html"),
+        Path("backend/app/index.html"),
+        Path("api/index.html"),
+        Path("index.html")
+    ]
+    for p in candidates:
+        if p.exists():
+            try:
+                return p.read_text(encoding="utf-8")
+            except Exception:
+                continue
+    return "<h1>SocialPulse API running. Visit <a href='/docs'>/docs</a></h1>"
 
+# Mount frontend static directory if exists
+frontend_public = BASE_DIR / "frontend" / "public"
 if frontend_public.exists():
     app.mount("/static", StaticFiles(directory=str(frontend_public)), name="static")
 
-    @app.get("/", include_in_schema=False)
-    async def serve_index():
-        index_file = frontend_public / "index.html"
-        if index_file.exists():
-            return FileResponse(str(index_file))
-        return HTMLResponse("<h1>SocialPulse API is running. Visit <a href='/docs'>/docs</a></h1>")
-else:
-    @app.get("/", include_in_schema=False)
-    async def serve_index_fallback():
-        return HTMLResponse("<h1>SocialPulse API running. Visit <a href='/docs'>/docs</a></h1>")
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def serve_index():
+    return HTMLResponse(content=get_dashboard_html(), status_code=200)
 
 if __name__ == "__main__":
     import uvicorn
+    uvicorn.run("backend.app.main:app", host=settings.HOST, port=settings.PORT, reload=True)
     uvicorn.run("backend.app.main:app", host=settings.HOST, port=settings.PORT, reload=True)
 
